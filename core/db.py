@@ -1,8 +1,8 @@
-import sqlite3
 import os
+import sqlite3
 from contextlib import contextmanager
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "fantasy.db")
+from core.config import DB_PATH
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS leagues (
@@ -85,6 +85,8 @@ CREATE TABLE IF NOT EXISTS rankings (
     format TEXT,
     week INTEGER,
     rank INTEGER,
+    position TEXT,
+    team TEXT,
     position_rank TEXT,
     tier INTEGER,
     pos_tier INTEGER,
@@ -184,6 +186,19 @@ def get_db(db_path=None):
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def get_conn():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
     try:
         yield conn
         conn.commit()

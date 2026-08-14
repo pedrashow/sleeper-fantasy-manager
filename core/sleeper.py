@@ -1,66 +1,73 @@
-import requests
 import time
 
-BASE_URL = "https://api.sleeper.app/v1"
-PLAYERS_CACHE = None
-PLAYERS_CACHE_TIME = 0
-PLAYERS_CACHE_TTL = 3600
+import requests
+
+from core.config import SLEEPER_API_URL
+
+_cache = {}
 
 
 def _get(path):
-    resp = requests.get(f"{BASE_URL}{path}", timeout=15)
+    resp = requests.get(f"{SLEEPER_API_URL}{path}", timeout=15)
     resp.raise_for_status()
     return resp.json()
 
 
+def cached_get(path, ttl=15):
+    now = time.time()
+    if path in _cache and now - _cache[path][1] < ttl:
+        return _cache[path][0]
+    data = _get(path)
+    _cache[path] = (data, now)
+    return data
+
+
+def clear_cache():
+    _cache.clear()
+
+
 def get_user(username):
-    return _get(f"/user/{username}")
+    return cached_get(f"/user/{username}", ttl=3600)
 
 
 def get_user_leagues(user_id, season="2026", sport="nfl"):
-    return _get(f"/user/{user_id}/leagues/{sport}/{season}")
+    return cached_get(f"/user/{user_id}/leagues/{sport}/{season}", ttl=300)
 
 
 def get_league(league_id):
-    return _get(f"/league/{league_id}")
+    return cached_get(f"/league/{league_id}", ttl=300)
 
 
 def get_rosters(league_id):
-    return _get(f"/league/{league_id}/rosters")
+    return cached_get(f"/league/{league_id}/rosters", ttl=60)
 
 
 def get_users(league_id):
-    return _get(f"/league/{league_id}/users")
+    return cached_get(f"/league/{league_id}/users", ttl=300)
 
 
 def get_matchups(league_id, week):
-    return _get(f"/league/{league_id}/matchups/{week}")
+    return cached_get(f"/league/{league_id}/matchups/{week}", ttl=30)
 
 
 def get_transactions(league_id, week):
-    return _get(f"/league/{league_id}/transactions/{week}")
+    return cached_get(f"/league/{league_id}/transactions/{week}", ttl=60)
 
 
 def get_traded_picks(league_id):
-    return _get(f"/league/{league_id}/traded_picks")
+    return cached_get(f"/league/{league_id}/traded_picks", ttl=300)
 
 
 def get_draft(draft_id):
-    return _get(f"/draft/{draft_id}")
+    return cached_get(f"/draft/{draft_id}", ttl=15)
 
 
 def get_draft_picks(draft_id):
-    return _get(f"/draft/{draft_id}/picks")
+    return cached_get(f"/draft/{draft_id}/picks", ttl=15)
 
 
 def get_all_players():
-    global PLAYERS_CACHE, PLAYERS_CACHE_TIME
-    now = time.time()
-    if PLAYERS_CACHE and (now - PLAYERS_CACHE_TIME) < PLAYERS_CACHE_TTL:
-        return PLAYERS_CACHE
-    PLAYERS_CACHE = _get("/players/nfl")
-    PLAYERS_CACHE_TIME = now
-    return PLAYERS_CACHE
+    return cached_get("/players/nfl", ttl=3600)
 
 
 def classify_league(league_data):
