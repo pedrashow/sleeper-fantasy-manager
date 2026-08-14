@@ -50,10 +50,6 @@ def cmd_trade_values(args):
         run_cmd(["scrapers/fantasycalc.py", "--format", args.format, "--teams", str(args.teams)])
 
 
-def cmd_app(_):
-    subprocess.run([sys.executable, "-m", "streamlit", "run", "app/Home.py"], check=True)
-
-
 def cmd_clean(_):
     db_path = os.path.join("data", "fantasy.db")
     for folder in ["data/rankings", "data/trade_values"]:
@@ -99,7 +95,6 @@ if __name__ == "__main__":
     p_tv.add_argument("--teams", type=int, default=12, choices=[10, 12, 14])
     p_tv.add_argument("--all", action="store_true", help="Fetch all formats")
 
-    sub.add_parser("app", help="Start Streamlit app")
     sub.add_parser("clean", help="Remove database and cached rankings")
 
     args = parser.parse_args()
@@ -114,7 +109,6 @@ if __name__ == "__main__":
         "rankings": cmd_rankings,
         "trade-values": cmd_trade_values,
         "update": cmd_update,
-        "app": cmd_app,
         "clean": cmd_clean,
     }
     commands[args.command](args)
