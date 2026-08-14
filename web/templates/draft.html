@@ -1,0 +1,422 @@
+{% extends "base.html" %}
+{% set active_page = "draft" %}
+
+{% block title %}Draft Assistant — SFM{% endblock %}
+
+{% block container_class %}wide{% endblock %}
+
+{% block content %}
+<div style="display:flex;gap:12px;align-items:center;margin-bottom:12px;">
+    <h1 style="margin:0;">Draft Assistant</h1>
+    <form method="get" action="/draft" style="display:flex;gap:8px;align-items:center;">
+        <select name="league_id" onchange="this.form.submit()" class="draft-select">
+            {% for lg in leagues %}
+            <option value="{{ lg.league_id }}" {% if lg.league_id == league_id %}selected{% endif %}>
+                {{ lg.name }} ({{ lg.league_type }} {{ lg.scoring_type }})
+            </option>
+            {% endfor %}
+        </select>
+        <input type="hidden" name="username" value="{{ username }}">
+        <a href="/draft?league_id={{ league_id }}&username={{ username }}" class="btn">🔄 Refresh</a>
+    </form>
+</div>
+
+{% if error %}
+<div class="empty-state">
+    <p>Error connecting to Sleeper: {{ error }}</p>
+</div>
+{% elif not ctx %}
+<div class="empty-state">
+    <p>No draft configured for this league.</p>
+</div>
+{% else %}
+
+{% set c = ctx %}
+{% set status_emoji = {"pre_draft": "⏳", "drafting": "🟢", "complete": "✅"} %}
+
+<div class="draft-header">
+    <span class="draft-clock">
+        {% if c.my_next_pick and c.my_next_pick == c.next_pick %}
+            <span class="your-turn">🟢 YOUR PICK! {{ format_adp(c.next_pick, c.num_teams) }}</span>
+        {% elif c.my_next_pick %}
+            <strong>{{ format_adp(c.next_pick, c.num_teams) }}</strong>
+            → <span class="my-pick">{{ format_adp(c.my_next_pick, c.num_teams) }}</span>
+            ({{ c.my_next_pick - c.next_pick }} away)
+        {% else %}
+            <strong>{{ format_adp(c.next_pick, c.num_teams) }}</strong>
+        {% endif %}
+    </span>
+    <span class="draft-sep">|</span>
+    <span class="draft-meta">
+        {{ status_emoji.get(c.draft_status, '') }} {{ c.rt_label }} · {{ c.picks|length }}/{{ c.num_rounds * c.num_teams }} · {{ c.draft_type }} {{ c.num_teams }}t
+    </span>
+    {% if c.recs.get('bpa') %}
+    <span class="draft-sep">|</span>
+    <span class="draft-bpa">
+        BPA: <span class="pos-{{ c.recs.bpa.pos|lower }}">{{ c.recs.bpa.pos }}</span>
+        <strong>{{ c.recs.bpa.name }}</strong> #{{ c.recs.bpa.rank }}
+    </span>
+    {% endif %}
+    {% if c.recs.get('needs') %}
+    <span class="draft-sep">|</span>
+    {% for pos, info in c.recs.needs.items() %}
+    <span class="draft-need">
+        NEED {{ pos }}: <strong>{{ info.name }}</strong> #{{ info.rank }}
+    </span>
+    {% endfor %}
+    {% endif %}
+</div>
+
+<div class="draft-tabs">
+    <button class="tab active" onclick="showTab('board')">Board + Rankings</button>
+    <button class="tab" onclick="showTab('search')">Advanced Search</button>
+    <button class="tab" onclick="showTab('team')">My Team</button>
+</div>
+
+<div id="tab-board" class="tab-content">
+    <div class="draft-layout">
+        <div class="draft-board">
+            {% if c.picks %}
+            <div style="overflow-x:auto;">
+            <table class="board-table">
+                <thead>
+                <tr>
+                    {% for slot in c.slot_names.keys()|sort %}
+                    {% set rid = c.slot_to_roster.get(slot|string) %}
+                    <th {% if rid == c.my_roster_id %}class="my-col"{% endif %}>
+                        {{ c.slot_names[slot] }}
+                    </th>
+                    {% endfor %}
+                </tr>
+                </thead>
+                <tbody>
+                {% for rd in range(1, c.num_rounds + 1) %}
+                <tr>
+                    {% for slot in c.slot_names.keys()|sort %}
+                    {% set rid = c.slot_to_roster.get(slot|string) %}
+                    {% set pick = c.board.get(rd, {}).get(slot) %}
+                    {% if pick %}
+                        {% set bg = c.pos_pastel.get(pick.pos, '#e5e8ea') %}
+                        {% set adp = c.adp_lookup.get(pick.first ~ ' ' ~ pick.last) %}
+                        {% set diff = (adp - pick.pick_no)|int if adp else 0 %}
+                        <td style="background:{{ bg }};{% if diff >= 4 %}border-left:3px solid #2e8b57;{% elif diff <= -4 %}border-left:3px solid #c0392b;{% endif %}"
+                            {% if rid == c.my_roster_id %}class="my-border"{% endif %}
+                            {% if adp %}title="ADP {{ '%.0f'|format(adp) }}, Pick {{ pick.pick_no }}"{% endif %}>
+                            <span class="pick-first">{{ pick.first }}</span>
+                            <span class="pick-last">{{ pick.last }}</span>
+                        </td>
+                    {% else %}
+                        <td class="{% if rid == c.my_roster_id %}board-empty-mine{% else %}board-empty{% endif %}">-</td>
+                    {% endif %}
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            </div>
+            {% else %}
+            <div class="empty-state">No picks yet.</div>
+            {% endif %}
+        </div>
+
+        <div class="draft-list">
+            <div class="list-controls">
+                <select id="list-pos-filter" onchange="filterList()">
+                    <option value="ALL">ALL</option>
+                    <option value="QB">QB</option>
+                    <option value="RB">RB</option>
+                    <option value="WR">WR</option>
+                    <option value="TE">TE</option>
+                </select>
+            </div>
+            <div class="list-scroll">
+                {% for p in c.available[:60] %}
+                    {% set bg = c.pos_pastel.get(p.pos, '#f0f0f0') %}
+                    {% set is_target = p.player_id in c.targets %}
+                    <div class="list-player {% if is_target %}list-target{% endif %}" style="background:{{ bg }};" data-pos="{{ p.pos }}" data-tier="{{ p.tier|int if p.tier else '' }}" data-pos-tier="{{ p.pos_tier|int if p.pos_tier else '' }}" data-pid="{{ p.player_id }}">
+                        <div class="list-name">
+                            {% if is_target %}⭐{% endif %}
+                            {{ p.player_name }}
+                        </div>
+                        <div class="list-detail">
+                            <span class="list-fp">{{ p.position_rank or '' }}</span>
+                            {% if p.lb_rank %}
+                            <span class="list-lb">/ {{ p.pos }}{{ p.lb_rank }}</span>
+                            {% endif %}
+                            {% if p.wn_rank %}
+                            <span class="list-wn">/ {{ p.pos }}{{ p.wn_rank }}</span>
+                            {% endif %}
+                            <span class="list-team">{{ p.team }}</span>
+                            {% set adp_fmt = format_adp(p.avg_adp, c.num_teams) %}
+                            {% if adp_fmt %}<span class="list-meta">{{ adp_fmt }}</span>{% endif %}
+                            {% if p.tv_value %}<span class="list-tv">{{ p.tv_value|int }}</span>{% endif %}
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="tab-search" class="tab-content" style="display:none;">
+    <div style="display:flex;gap:8px;margin-bottom:12px;">
+        <select id="search-pos" onchange="filterSearch()">
+            <option value="ALL">ALL</option>
+            <option value="QB">QB</option>
+            <option value="RB">RB</option>
+            <option value="WR">WR</option>
+            <option value="TE">TE</option>
+        </select>
+        <input type="search" id="search-name" placeholder="Player name..." oninput="filterSearch()">
+        <label style="display:flex;align-items:center;gap:4px;font-size:13px;color:var(--text-dim);">
+            <input type="checkbox" id="search-targets-only" onchange="filterSearch()"> Targets only
+        </label>
+    </div>
+    <div style="overflow-x:auto;">
+    <table class="search-table" id="search-table">
+        <thead>
+        <tr>
+            <th class="num">#</th>
+            <th>Player</th>
+            <th>Pos</th>
+            <th>Team</th>
+            <th class="num">FP#</th>
+            <th class="num">LB#</th>
+            <th class="num">WN#</th>
+            <th class="num">Δ LB</th>
+            <th class="num">Δ WN</th>
+            <th class="num">Tier/Pos</th>
+            <th class="num">ADP</th>
+            <th class="num">TV</th>
+            <th class="num">Trend</th>
+            <th>Bye</th>
+            <th>Fav</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% set ns2 = namespace(current_tier=None) %}
+        {% for p in c.available %}
+            {% if p.tier != ns2.current_tier and p.tier is not none %}
+                <tr class="tier-row tier-row-static"><td colspan="15" class="tier-sep-cell">{% if ns2.current_tier is not none %}━━━ {% endif %}Tier {{ p.tier|int }}</td></tr>
+                {% set ns2.current_tier = p.tier %}
+            {% endif %}
+            {% set fp_num = p.position_rank|replace('QB','')|replace('RB','')|replace('WR','')|replace('TE','')|replace('K','')|replace('DST','') if p.position_rank else '' %}
+            {% set lb_num = p.lb_rank if p.lb_rank else '' %}
+            {% set wn_num = p.wn_rank if p.wn_rank else '' %}
+            {% set delta_lb = (fp_num|int - lb_num|int) if fp_num and lb_num else '' %}
+            {% set delta_wn = (fp_num|int - wn_num|int) if fp_num and wn_num else '' %}
+            {% set is_target = p.player_id in c.targets %}
+        <tr data-pos="{{ p.pos }}" data-name="{{ p.player_name|lower }}" data-target="{{ '1' if is_target else '0' }}" data-tier="{{ p.tier|int if p.tier else '' }}" data-pos-tier="{{ p.pos_tier|int if p.pos_tier else '' }}" data-pid="{{ p.player_id }}">
+            <td class="num">{{ p.rank }}</td>
+            <td class="search-name-cell">
+                {% if is_target %}⭐{% endif %}
+                {{ p.player_name }}
+            </td>
+            <td><span class="pos pos-{{ p.pos|lower }}">{{ p.pos }}</span></td>
+            <td>{{ p.team }}</td>
+            <td class="num">{{ fp_num }}</td>
+            <td class="num rank-lb">{{ lb_num }}</td>
+            <td class="num rank-wn">{{ wn_num }}</td>
+            <td class="num {% if delta_lb and delta_lb|int > 0 %}trend-up{% elif delta_lb and delta_lb|int < 0 %}trend-down{% endif %}">{{ delta_lb }}</td>
+            <td class="num {% if delta_wn and delta_wn|int > 0 %}trend-up{% elif delta_wn and delta_wn|int < 0 %}trend-down{% endif %}">{{ delta_wn }}</td>
+            <td class="num">{{ p.tier|int if p.tier else '' }} / {{ p.pos_tier|int if p.pos_tier else '' }}</td>
+            <td class="num">{{ format_adp(p.avg_adp, c.num_teams) }}</td>
+            <td class="num">{{ p.tv_value|int if p.tv_value else '' }}</td>
+            <td class="num {% if p.tv_trend and p.tv_trend > 0 %}trend-up{% elif p.tv_trend and p.tv_trend < 0 %}trend-down{% endif %}">
+                {{ p.tv_trend|int if p.tv_trend else '' }}
+            </td>
+            <td class="num">{{ p.bye_week if p.bye_week else '' }}</td>
+            <td>
+                {% if is_target %}
+                <button class="btn-fav btn-fav-active" onclick="toggleFav('{{ c.draft_id }}','{{ p.player_id }}','remove', this)">⭐</button>
+                {% else %}
+                <button class="btn-fav" onclick="toggleFav('{{ c.draft_id }}','{{ p.player_id }}','target', this)">☆</button>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</div>
+
+<div id="tab-team" class="tab-content" style="display:none;">
+    {% if c.my_picks %}
+    <h2 style="font-size:16px;margin-bottom:8px;">Picks</h2>
+    <table>
+        <thead>
+        <tr><th class="num">Pick</th><th class="num">Rd</th><th>Player</th><th>Pos</th><th>Team</th></tr>
+        </thead>
+        <tbody>
+        {% for p in c.my_picks %}
+        {% set meta = p.get('metadata', {}) %}
+        <tr>
+            <td class="num">{{ p.pick_no }}</td>
+            <td class="num">{{ p.round }}</td>
+            <td>{{ meta.get('first_name', '') }} {{ meta.get('last_name', '') }}</td>
+            <td><span class="pos pos-{{ meta.get('position', '')|lower }}">{{ meta.get('position', '') }}</span></td>
+            <td>{{ meta.get('team', '') }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">No picks yet.</div>
+    {% endif %}
+
+    <h2 style="font-size:16px;margin:20px 0 8px;">Position Needs</h2>
+    <table>
+        <thead>
+        <tr><th>Position</th><th class="num">Required</th><th class="num">Drafted</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+        {% set roster_positions = league.roster_positions|default('[]') %}
+        {% for pos in ['QB', 'RB', 'WR', 'TE'] %}
+        <tr>
+            <td><span class="pos pos-{{ pos|lower }}">{{ pos }}</span></td>
+            <td class="num">{{ c.needs.get(pos, 0) + c.pos_counts.get(pos, 0) }}</td>
+            <td class="num">{{ c.pos_counts.get(pos, 0) }}</td>
+            <td>{% if c.needs.get(pos, 0) > 0 %}<span class="status-warn">Need {{ c.needs[pos] }}</span>{% else %}<span class="status-ok">✓</span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+
+    {% if not c.needs %}
+    <p style="color:var(--success);margin-top:8px;">All starters filled. Focus on BPA.</p>
+    {% endif %}
+</div>
+
+<script>
+function showTab(name) {
+    document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
+    document.querySelectorAll('.draft-tabs .tab').forEach(el => el.classList.remove('active'));
+    document.getElementById('tab-' + name).style.display = '';
+    event.target.classList.add('active');
+}
+
+function filterList() {
+    var pos = document.getElementById('list-pos-filter').value;
+    var usePosTier = (pos !== 'ALL');
+    var tierField = usePosTier ? 'posTier' : 'tier';
+    var lastTier = null;
+
+    document.querySelectorAll('.list-scroll .tier-label, .list-scroll .tier-sep').forEach(function(el) {
+        el.remove();
+    });
+
+    var items = document.querySelectorAll('.list-player');
+    items.forEach(function(el) {
+        var visible = (pos === 'ALL' || el.dataset.pos === pos);
+        el.style.display = visible ? '' : 'none';
+        if (visible) {
+            var tier = el.dataset[tierField];
+            if (tier && tier !== lastTier) {
+                if (lastTier !== null) {
+                    var sep = document.createElement('div');
+                    sep.className = 'tier-sep';
+                    el.parentNode.insertBefore(sep, el);
+                }
+                var label = document.createElement('div');
+                label.className = 'tier-label';
+                label.textContent = (usePosTier ? pos + ' ' : '') + 'Tier ' + tier;
+                el.parentNode.insertBefore(label, el);
+                lastTier = tier;
+            }
+        }
+    });
+}
+
+filterList();
+
+function filterSearch() {
+    var pos = document.getElementById('search-pos').value;
+    var name = document.getElementById('search-name').value.toLowerCase();
+    var targetsOnly = document.getElementById('search-targets-only').checked;
+    var usePosTier = (pos !== 'ALL');
+    var tierField = usePosTier ? 'posTier' : 'tier';
+
+    document.querySelectorAll('#search-table tbody tr.tier-row-static').forEach(function(tr) {
+        tr.style.display = usePosTier || name || targetsOnly ? 'none' : '';
+    });
+
+    document.querySelectorAll('#search-table tbody tr.tier-row-dynamic').forEach(function(tr) {
+        tr.remove();
+    });
+
+    var lastTier = null;
+    var rows = document.querySelectorAll('#search-table tbody tr:not(.tier-row-static)');
+    rows.forEach(function(tr) {
+        if (tr.classList.contains('tier-row-dynamic')) return;
+        var show = true;
+        if (pos !== 'ALL' && tr.dataset.pos !== pos) show = false;
+        if (name && tr.dataset.name.indexOf(name) === -1) show = false;
+        if (targetsOnly && tr.dataset.target !== '1') show = false;
+        tr.style.display = show ? '' : 'none';
+
+        if (show && usePosTier && !name && !targetsOnly) {
+            var tier = tr.dataset[tierField];
+            if (tier && tier !== lastTier) {
+                var sepRow = document.createElement('tr');
+                sepRow.className = 'tier-row tier-row-dynamic';
+                var td = document.createElement('td');
+                td.colSpan = 15;
+                td.className = 'tier-sep-cell';
+                td.textContent = pos + ' Tier ' + tier;
+                sepRow.appendChild(td);
+                tr.parentNode.insertBefore(sepRow, tr);
+                lastTier = tier;
+            }
+        }
+    });
+}
+
+function toggleFav(draftId, playerId, action, btn) {
+    var form = new FormData();
+    form.append('draft_id', draftId);
+    form.append('player_id', playerId);
+    form.append('action', action);
+    fetch('/draft/favorite', {method: 'POST', body: form}).then(function() {
+        var isFav = (action !== 'remove');
+
+        if (isFav) {
+            btn.textContent = '⭐';
+            btn.classList.add('btn-fav-active');
+            btn.setAttribute('onclick', "toggleFav('" + draftId + "','" + playerId + "','remove', this)");
+        } else {
+            btn.textContent = '☆';
+            btn.classList.remove('btn-fav-active');
+            btn.setAttribute('onclick', "toggleFav('" + draftId + "','" + playerId + "','target', this)");
+        }
+
+        var searchRow = document.querySelector('#search-table tr[data-pid="' + playerId + '"]');
+        if (searchRow) {
+            searchRow.dataset.target = isFav ? '1' : '0';
+            var nameCell = searchRow.querySelector('.search-name-cell');
+            if (nameCell) {
+                var text = nameCell.textContent.replace('⭐', '').trim();
+                nameCell.textContent = (isFav ? '⭐ ' : '') + text;
+            }
+        }
+
+        document.querySelectorAll('.list-player').forEach(function(el) {
+            var listName = el.querySelector('.list-name');
+            if (!listName) return;
+            var nameText = listName.textContent.replace('⭐', '').trim();
+            var elPid = el.dataset.pid;
+            if (elPid === playerId) {
+                if (isFav) {
+                    el.classList.add('list-target');
+                    listName.textContent = '⭐ ' + nameText;
+                } else {
+                    el.classList.remove('list-target');
+                    listName.textContent = nameText;
+                }
+            }
+        });
+    });
+}
+</script>
+
+{% endif %}
+{% endblock %}

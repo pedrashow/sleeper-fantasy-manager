@@ -1,0 +1,47 @@
+<td colspan="9" class="detail-cell">
+    <div class="detail-grid">
+        <div class="detail-panel">
+            <div class="detail-title status-warn">In {{ source_label }}, not in Sleeper ({{ in_source|length }})</div>
+            {% if in_source %}
+            <table class="detail-table">
+                <thead>
+                    <tr><th>Player</th><th>Pos</th><th>Team</th></tr>
+                </thead>
+                <tbody>
+                    {% for p in in_source %}
+                    <tr>
+                        <td>{{ p.name }}</td>
+                        <td><span class="pos pos-{{ (p.position or '')|lower }}">{{ p.position or '—' }}</span></td>
+                        <td>{{ p.team or '—' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="detail-empty">All matched ✓</div>
+            {% endif %}
+        </div>
+
+        <div class="detail-panel">
+            <div class="detail-title">In Sleeper, not in {{ source_label }} ({{ total_not_in }}{% if in_sleeper|length < total_not_in %}, showing {{ in_sleeper|length }}{% endif %})</div>
+            {% if in_sleeper %}
+            <table class="detail-table">
+                <thead>
+                    <tr><th>Player</th><th>Pos</th><th>Team</th></tr>
+                </thead>
+                <tbody>
+                    {% for p in in_sleeper %}
+                    <tr>
+                        <td>{{ p.full_name }}</td>
+                        <td><span class="pos pos-{{ p.position|lower }}">{{ p.position }}</span></td>
+                        <td>{{ p.team or '—' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="detail-empty">All present ✓</div>
+            {% endif %}
+        </div>
+    </div>
+</td>

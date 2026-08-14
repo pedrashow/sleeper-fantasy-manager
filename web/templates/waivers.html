@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% set active_page = "waivers" %}
+
+{% block title %}Waivers — SFM{% endblock %}
+
+{% block container_class %}wide{% endblock %}
+
+{% block content %}
+<div style="display:flex;align-items:center;gap:16px;margin-bottom:16px;">
+    <h1 style="margin:0;">Waivers</h1>
+    <div class="wv-tabs">
+        <a href="/waivers?tab=dynasty" class="wv-tab {% if tab == 'dynasty' %}active{% endif %}">Dynasty</a>
+        <a href="/waivers?tab=redraft&ranking_mode={{ ranking_mode }}&week={{ week }}{% if show_kdst %}&show_kdst=1{% endif %}"
+           class="wv-tab {% if tab == 'redraft' %}active{% endif %}">Redraft</a>
+    </div>
+
+    {% if tab == 'redraft' %}
+    <form method="get" action="/waivers" style="display:flex;gap:6px;align-items:center;margin-left:auto;">
+        <input type="hidden" name="tab" value="redraft">
+        <select name="ranking_mode" onchange="this.form.submit()">
+            <option value="season" {% if ranking_mode == 'season' %}selected{% endif %}>Season</option>
+            <option value="ros" {% if ranking_mode == 'ros' %}selected{% endif %}>Rest of Season</option>
+            <option value="weekly" {% if ranking_mode == 'weekly' %}selected{% endif %}>Weekly</option>
+        </select>
+        {% if ranking_mode == 'weekly' %}
+        <select name="week" onchange="this.form.submit()">
+            {% for w in range(1, 19) %}
+            <option value="{{ w }}" {% if week == w %}selected{% endif %}>Wk {{ w }}</option>
+            {% endfor %}
+        </select>
+        {% endif %}
+        <label style="display:flex;align-items:center;gap:4px;font-size:13px;color:var(--text-dim);cursor:pointer;">
+            <input type="checkbox" name="show_kdst" value="1" {% if show_kdst %}checked{% endif %} onchange="this.form.submit()">
+            K/DST
+        </label>
+    </form>
+    {% endif %}
+</div>
+
+{% set league_groups = dynasty_data if tab == 'dynasty' else redraft_data %}
+
+{% if not league_groups %}
+<div class="empty-state">
+    {% if tab == 'dynasty' %}No dynasty leagues found{% else %}No redraft leagues found{% endif %}
+</div>
+{% endif %}
+
+{% for lg_data in league_groups %}
+{% set league = lg_data.league %}
+<div class="wv-league">
+    <div class="wv-league-header">
+        {{ league.name }}
+        <span class="cell-mono" style="font-weight:400;">
+            {{ league.scoring_type }}{% if league.is_superflex %} · SF{% endif %}{% if league.is_tep %} · TEP{% endif %}
+        </span>
+    </div>
+
+    <div class="wv-cards">
+        {% for pos_block in lg_data.positions %}
+        <div class="wv-card">
+            <div class="wv-card-header">
+                <span class="wv-pos-label">{{ pos_block.pos }}</span>
+                <span class="wv-pos-rank">Rank {{ pos_block.my_rank }}</span>
+            </div>
+
+            <div class="wv-card-list">
+                <div class="wv-list-header">
+                    <span class="wv-col-rk">RK</span>
+                    <span class="wv-col-name">PLAYER</span>
+                    {% if lg_data.is_dynasty %}
+                    <span class="wv-col-extra rank-lb">LB</span>
+                    <span class="wv-col-extra rank-wn">WN</span>
+                    {% endif %}
+                    <span class="wv-col-tv">TV</span>
+                </div>
+
+                {% for p in pos_block.players %}
+                <a href="/player?q={{ p.full_name|urlencode }}" class="wv-row {% if p.is_mine %}wv-rostered{% else %}wv-available{% endif %}">
+                    <span class="wv-col-rk">{{ p.fp_pos_rank or '' }}</span>
+                    <span class="wv-col-name">
+                        {{ p.full_name.split(' ')[0][0] }}. {{ p.full_name.split(' ')[-1] }}
+                        <span class="wv-team">{{ p.team }}</span>
+                        {% if p.injury_status %}<span class="status-err" style="font-size:10px;">{{ p.injury_status[:3] }}</span>{% endif %}
+                    </span>
+                    {% if lg_data.is_dynasty %}
+                    <span class="wv-col-extra rank-lb">{{ p.lb_rank or '' }}</span>
+                    <span class="wv-col-extra rank-wn">{{ p.wn_rank or '' }}</span>
+                    {% endif %}
+                    <span class="wv-col-tv">
+                        {% if p.tv_value %}{{ p.tv_value|int }}{% endif %}
+                        {% if p.tv_trend and p.tv_trend > 0 %}<span class="trend-up" style="font-size:10px;">↑</span>{% elif p.tv_trend and p.tv_trend < 0 %}<span class="trend-down" style="font-size:10px;">↓</span>{% endif %}
+                    </span>
+                </a>
+                {% endfor %}
+
+                {% if not pos_block.players %}
+                <div class="wv-row" style="color:var(--text-dim);justify-content:center;">No data</div>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endfor %}
+
+<div style="margin-top:12px;display:flex;gap:12px;font-size:12px;color:var(--text-dim);">
+    <span><span class="wv-legend-swatch wv-rostered"></span> Rostered</span>
+    <span><span class="wv-legend-swatch wv-available"></span> Available</span>
+</div>
+
+{% endblock %}

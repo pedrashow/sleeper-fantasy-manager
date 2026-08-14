@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+{% set active_page = "health" %}
+
+{% block title %}Data Health — SFM{% endblock %}
+
+{% block content %}
+<h1>Data Health</h1>
+<p class="subtitle">Sync status across all sources — click a row to expand</p>
+
+{% if health %}
+<table>
+    <thead>
+        <tr>
+            <th></th>
+            <th>Source</th>
+            <th class="num">Players</th>
+            <th class="num">Matched</th>
+            <th class="num">Not in Sleeper</th>
+            <th class="num">Sleeper w/o Source</th>
+            <th class="num">Match %</th>
+            <th>Last Update</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for src in health %}
+        <tr {% if not src.is_base %}
+                onclick="toggleDetail('{{ src.key }}')"
+                style="cursor:pointer"
+            {% endif %}>
+            <td>
+                {% if src.get('error') %}
+                    <span class="status-err">●</span>
+                {% elif src.is_base %}
+                    <span class="status-ok">●</span>
+                {% elif src.unmatched > 0 %}
+                    <span class="status-warn">●</span>
+                {% else %}
+                    <span class="status-ok">●</span>
+                {% endif %}
+            </td>
+            <td>
+                {{ src.name }}
+                {% if not src.is_base %}<span class="expand-hint" id="arrow-{{ src.key }}">▸</span>{% endif %}
+            </td>
+            <td class="num">
+                {% if src.is_base %}
+                    {{ "{:,}".format(src.total) }}
+                    <span style="color:var(--text-dim);font-size:12px">(+{{ "{:,}".format(src.fa_count) }} FA)</span>
+                {% else %}
+                    {{ "{:,}".format(src.total) }}
+                {% endif %}
+            </td>
+            <td class="num">
+                {% if src.is_base %}—{% else %}{{ "{:,}".format(src.matched) }}{% endif %}
+            </td>
+            <td class="num">
+                {% if src.is_base %}—
+                {% elif src.unmatched > 0 %}<span class="status-warn">{{ src.unmatched }}</span>
+                {% else %}0{% endif %}
+            </td>
+            <td class="num">
+                {% if src.is_base %}—
+                {% elif src.not_in_source > 0 %}{{ "{:,}".format(src.not_in_source) }}
+                {% else %}0{% endif %}
+            </td>
+            <td class="num">
+                {% if src.is_base %}—
+                {% else %}
+                    {{ src.pct }}%
+                    <span class="pct-bar"><span class="pct-bar-fill {% if src.pct < 95 %}warn{% endif %}" style="width:{{ src.pct }}%"></span></span>
+                {% endif %}
+            </td>
+            <td class="cell-mono">{{ src.last_update or '—' }}</td>
+            <td>
+                {% if src.key in ['sleeper', 'fantasypros', 'fantasycalc'] %}
+                <button class="btn"
+                    onclick="event.stopPropagation(); runImport('{{ src.key }}', this)"
+                    style="font-size:12px;padding:3px 8px;">
+                    🔄 Import
+                </button>
+                <span id="import-status-{{ src.key }}"></span>
+                {% elif src.key in ['longbuild', 'winnow'] %}
+                <button class="btn"
+                    onclick="event.stopPropagation(); importRsp('{{ src.key }}', this)"
+                    style="font-size:12px;padding:3px 8px;">
+                    🔄 Import
+                </button>
+                <span id="import-status-{{ src.key }}"></span>
+                {% endif %}
+            </td>
+        </tr>
+        {% if not src.is_base %}
+        <tr id="detail-{{ src.key }}" class="detail-row" style="display:none">
+        </tr>
+        {% endif %}
+        {% endfor %}
+    </tbody>
+</table>
+
+<div class="dash-section" style="margin-top:16px;">
+    <h2 class="dash-title">📊 RSP Import (Long Build / Win-Now)</h2>
+    <div style="display:flex;gap:8px;align-items:center;">
+        <input type="text" id="rsp-path" placeholder="Path to RSP Excel file..." value="data/rsp.xlsx" style="flex:1;">
+    </div>
+    <p style="font-size:12px;color:var(--text-dim);margin-top:6px;">Both sheets (Long Build + Win-Now) are imported together. Use the Import buttons above per source.</p>
+</div>
+
+<div class="dash-section" style="margin-top:16px;">
+    <h2 class="dash-title">📅 Weekly Rankings Import</h2>
+    <div style="display:flex;gap:8px;align-items:center;">
+        <select id="weekly-week" style="width:100px;">
+            {% for w in range(1, 19) %}
+            <option value="{{ w }}">Week {{ w }}</option>
+            {% endfor %}
+        </select>
+        <button class="btn" onclick="importWeekly(this)">🔄 Import Weekly</button>
+        <span id="import-status-weekly"></span>
+    </div>
+    <p style="font-size:12px;color:var(--text-dim);margin-top:6px;">Imports FantasyPros weekly rankings (half, ppr, std) for the selected week.</p>
+</div>
+
+<script>
+function toggleDetail(key) {
+    var row = document.getElementById('detail-' + key);
+    var arrow = document.getElementById('arrow-' + key);
+    if (row.style.display !== 'none' && row.innerHTML.trim()) {
+        row.style.display = 'none';
+        arrow.textContent = '▸';
+    } else {
+        if (!row.innerHTML.trim()) {
+            htmx.ajax('GET', '/health/detail/' + key, {target: '#detail-' + key, swap: 'innerHTML'});
+        }
+        row.style.display = '';
+        arrow.textContent = '▾';
+    }
+}
+
+function runImport(key, btn) {
+    var status = document.getElementById('import-status-' + key);
+    btn.disabled = true;
+    btn.textContent = '⏳ Running...';
+    status.innerHTML = '';
+    fetch('/health/import/' + key, {method: 'POST'})
+        .then(function(r) { return r.text(); })
+        .then(function(html) {
+            status.innerHTML = html;
+            btn.disabled = false;
+            btn.textContent = '🔄 Import';
+        })
+        .catch(function(e) {
+            status.innerHTML = '<span class="status-err">✗ Network error</span>';
+            btn.disabled = false;
+            btn.textContent = '🔄 Import';
+        });
+}
+
+function importRsp(key, btn) {
+    var filepath = document.getElementById('rsp-path').value;
+    if (!filepath) {
+        alert('Enter the RSP Excel file path first.');
+        return;
+    }
+    var status = document.getElementById('import-status-' + key);
+    var sheet = (key === 'longbuild') ? 'longbuild' : 'winnow';
+    btn.disabled = true;
+    btn.textContent = '⏳ Running...';
+    status.innerHTML = '';
+    fetch('/health/import/rsp?sheet=' + sheet + '&filepath=' + encodeURIComponent(filepath), {method: 'POST'})
+        .then(function(r) { return r.text(); })
+        .then(function(html) {
+            status.innerHTML = html;
+            btn.disabled = false;
+            btn.textContent = '🔄 Import';
+        })
+        .catch(function(e) {
+            status.innerHTML = '<span class="status-err">✗ Network error</span>';
+            btn.disabled = false;
+            btn.textContent = '🔄 Import';
+        });
+}
+
+function importWeekly(btn) {
+    var week = document.getElementById('weekly-week').value;
+    var status = document.getElementById('import-status-weekly');
+    btn.disabled = true;
+    btn.textContent = '⏳ Running...';
+    status.innerHTML = '';
+    fetch('/health/import/weekly?week=' + week, {method: 'POST'})
+        .then(function(r) { return r.text(); })
+        .then(function(html) {
+            status.innerHTML = html;
+            btn.disabled = false;
+            btn.textContent = '🔄 Import Weekly';
+        })
+        .catch(function(e) {
+            status.innerHTML = '<span class="status-err">✗ Network error</span>';
+            btn.disabled = false;
+            btn.textContent = '🔄 Import Weekly';
+        });
+}
+</script>
+{% else %}
+<div class="empty-state">
+    <p>No database found at <code>data/fantasy.db</code></p>
+    <p>Run <code>python manage.py sync</code> to get started.</p>
+</div>
+{% endif %}
+{% endblock %}

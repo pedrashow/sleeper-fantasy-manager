@@ -1,0 +1,168 @@
+{% if not player %}
+<div class="empty-state">Player not found</div>
+{% else %}
+
+<div class="player-header">
+    <h2>
+        <span class="pos pos-{{ player.position|lower }}">{{ player.position }}</span>
+        {{ player.full_name }}
+        <span class="cell-mono" style="font-weight:400;">{{ player.team }}</span>
+        {% if player.injury_status %}<span class="status-err" style="font-size:13px;">{{ player.injury_status }}</span>{% endif %}
+    </h2>
+    <div class="player-meta">
+        {% if player.age %}Age {{ player.age }}{% endif %}
+        {% if player.years_exp is not none %} · {{ player.years_exp }} yrs exp{% endif %}
+        {% if player.status and player.status != 'Active' %} · {{ player.status }}{% endif %}
+    </div>
+</div>
+
+<div class="player-cards">
+    {% if player.fp_best %}
+    <div class="stat-card">
+        <div class="stat-label">FantasyPros</div>
+        <div class="stat-value">#{{ player.fp_best.rank }}</div>
+        <div class="stat-sub">{{ player.fp_best.position_rank or '' }} · {{ player.fp_best.ranking_type }} {{ player.fp_best.format }}</div>
+    </div>
+    {% endif %}
+
+    {% if player.lb %}
+    <div class="stat-card">
+        <div class="stat-label rank-lb">Long Build</div>
+        <div class="stat-value rank-lb">#{{ player.lb.overall_rank or player.lb.pos_rank }}</div>
+        <div class="stat-sub">{{ player.position }}{{ player.lb.pos_rank }} · T{{ player.lb.tier }}</div>
+    </div>
+    {% endif %}
+
+    {% if player.wn %}
+    <div class="stat-card">
+        <div class="stat-label rank-wn">Win-Now</div>
+        <div class="stat-value rank-wn">#{{ player.wn.overall_rank or player.wn.pos_rank }}</div>
+        <div class="stat-sub">{{ player.position }}{{ player.wn.pos_rank }} · T{{ player.wn.tier }}</div>
+    </div>
+    {% endif %}
+
+    {% if player.tv_best %}
+    <div class="stat-card">
+        <div class="stat-label">Trade Value</div>
+        <div class="stat-value">{{ player.tv_best.value }}</div>
+        <div class="stat-sub">
+            {{ player.tv_best.format }}
+            {% if player.tv_best.trend_30day %}
+                <span class="{% if player.tv_best.trend_30day > 0 %}trend-up{% else %}trend-down{% endif %}">
+                    {{ '+' if player.tv_best.trend_30day > 0 }}{{ player.tv_best.trend_30day }}
+                </span>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<div class="player-sections">
+    <div class="player-section">
+        <h3 class="section-label">Leagues</h3>
+        {% if player.rostered_in or player.available_in %}
+        <table>
+            <thead><tr><th>League</th><th>Type</th><th>Status</th><th>Owner</th></tr></thead>
+            <tbody>
+            {% for lg in player.rostered_in %}
+            <tr>
+                <td>{{ lg.league }}</td>
+                <td>{{ lg.type }}</td>
+                <td>{% if lg.is_mine %}<span class="status-ok">My Team</span>{% else %}<span class="status-warn">Rostered</span>{% endif %}</td>
+                <td>{{ lg.owner }}</td>
+            </tr>
+            {% endfor %}
+            {% for lg in player.available_in %}
+            <tr>
+                <td>{{ lg.league }}</td>
+                <td>{{ lg.type }}</td>
+                <td><span class="trend-up">Available</span></td>
+                <td>—</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="dash-ok">Not in any of your leagues</p>
+        {% endif %}
+    </div>
+
+    {% if player.fp_rankings %}
+    <div class="player-section">
+        <details>
+            <summary class="section-label" style="cursor:pointer;">FantasyPros Rankings ({{ player.fp_rankings|length }} entries)</summary>
+            <table style="margin-top:8px;">
+                <thead><tr><th>Type</th><th>Format</th><th class="num">Rank</th><th>Pos Rank</th><th class="num">Tier</th><th class="num">ADP</th><th class="num">Best</th><th class="num">Worst</th></tr></thead>
+                <tbody>
+                {% for r in player.fp_rankings %}
+                <tr>
+                    <td>{{ r.ranking_type }}</td>
+                    <td>{{ r.format }}</td>
+                    <td class="num">{{ r.rank }}</td>
+                    <td>{{ r.position_rank or '' }}</td>
+                    <td class="num">{{ r.tier if r.tier else '' }}</td>
+                    <td class="num">{{ '%.1f'|format(r.avg_adp) if r.avg_adp else '' }}</td>
+                    <td class="num">{{ r.best if r.best else '' }}</td>
+                    <td class="num">{{ r.worst if r.worst else '' }}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </details>
+    </div>
+    {% endif %}
+
+    {% if player.trade_values %}
+    <div class="player-section">
+        <details>
+            <summary class="section-label" style="cursor:pointer;">Trade Values ({{ player.trade_values|length }} formats)</summary>
+            <table style="margin-top:8px;">
+                <thead><tr><th>Format</th><th class="num">Value</th><th class="num">Overall</th><th class="num">Pos Rank</th><th class="num">Trend 30d</th></tr></thead>
+                <tbody>
+                {% for tv in player.trade_values %}
+                <tr>
+                    <td>{{ tv.format }}</td>
+                    <td class="num"><strong>{{ tv.value }}</strong></td>
+                    <td class="num">{{ tv.overall_rank if tv.overall_rank else '' }}</td>
+                    <td class="num">{{ tv.position_rank if tv.position_rank else '' }}</td>
+                    <td class="num {% if tv.trend_30day and tv.trend_30day > 0 %}trend-up{% elif tv.trend_30day and tv.trend_30day < 0 %}trend-down{% endif %}">
+                        {{ ('+' ~ tv.trend_30day) if tv.trend_30day and tv.trend_30day > 0 else tv.trend_30day if tv.trend_30day else '' }}
+                    </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </details>
+    </div>
+    {% endif %}
+
+    {% if player.lb %}
+    <div class="player-section">
+        <details>
+            <summary class="section-label" style="cursor:pointer;">Long Build Detail</summary>
+            <table style="margin-top:8px;">
+                <tr><td style="color:var(--text-dim)">Overall Rank</td><td class="num">#{{ player.lb.overall_rank or '—' }}</td></tr>
+                <tr><td style="color:var(--text-dim)">Pos Rank</td><td class="num">{{ player.position }}{{ player.lb.pos_rank }}</td></tr>
+                <tr><td style="color:var(--text-dim)">Tier</td><td class="num">{{ player.lb.tier }} — {{ player.lb.tier_name }}</td></tr>
+                {% if player.lb.notes %}<tr><td style="color:var(--text-dim)">Notes</td><td>{{ player.lb.notes }}</td></tr>{% endif %}
+            </table>
+        </details>
+    </div>
+    {% endif %}
+
+    {% if player.wn %}
+    <div class="player-section">
+        <details>
+            <summary class="section-label" style="cursor:pointer;">Win-Now Detail</summary>
+            <table style="margin-top:8px;">
+                <tr><td style="color:var(--text-dim)">Overall Rank</td><td class="num">#{{ player.wn.overall_rank or '—' }}</td></tr>
+                <tr><td style="color:var(--text-dim)">Pos Rank</td><td class="num">{{ player.position }}{{ player.wn.pos_rank }}</td></tr>
+                <tr><td style="color:var(--text-dim)">Tier</td><td class="num">{{ player.wn.tier }} — {{ player.wn.tier_name }}</td></tr>
+                {% if player.wn.notes %}<tr><td style="color:var(--text-dim)">Notes</td><td>{{ player.wn.notes }}</td></tr>{% endif %}
+            </table>
+        </details>
+    </div>
+    {% endif %}
+</div>
+
+{% endif %}

@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% set active_page = "player" %}
+
+{% block title %}Player Lookup — SFM{% endblock %}
+
+{% block content %}
+<h1>Player Lookup</h1>
+
+<div style="display:flex;gap:12px;margin-bottom:16px;">
+    <input type="search" name="q" value="{{ q }}"
+        placeholder="Search player name..."
+        hx-get="/player"
+        hx-target="#player-content"
+        hx-trigger="keyup changed delay:400ms"
+        hx-push-url="true"
+        hx-select="#player-content"
+        hx-swap="outerHTML"
+        style="flex:1;max-width:400px;font-size:15px;padding:8px 12px;">
+</div>
+
+<div id="player-content">
+{% if q and results|length > 1 %}
+<div class="player-matches">
+    {% for r in results %}
+    <a href="/player?q={{ r.full_name|urlencode }}"
+       hx-get="/player/detail/{{ r.player_id }}"
+       hx-target="#player-detail"
+       hx-swap="innerHTML"
+       class="player-match-item {% if player and r.player_id == player.player_id %}active{% endif %}">
+        <span class="pos pos-{{ r.position|lower }}">{{ r.position }}</span>
+        {{ r.full_name }}
+        <span class="cell-mono">{{ r.team }}</span>
+    </a>
+    {% endfor %}
+</div>
+{% endif %}
+
+<div id="player-detail">
+{% if player %}
+{% include "player_detail.html" %}
+{% elif q %}
+<div class="empty-state">No players found for "{{ q }}"</div>
+{% else %}
+<div class="empty-state">Type a player name to search</div>
+{% endif %}
+</div>
+</div>
+{% endblock %}
