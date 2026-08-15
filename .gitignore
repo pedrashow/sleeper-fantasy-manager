@@ -8,13 +8,15 @@ build/
 data/fantasy.db
 data/rankings/*.json
 data/rankings/errors.log
+data/trade_values/*.json
+data/rsp.xlsx
+*.xlsx
+*.csv
 
 .env
 .venv/
 venv/
 env/
-
-.streamlit/secrets.toml
 
 *.swp
 *.swo
