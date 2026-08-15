@@ -176,6 +176,36 @@ CREATE TABLE IF NOT EXISTS draft_favorites (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (draft_id, player_id)
 );
+
+CREATE TABLE IF NOT EXISTS longbuild_rankings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    player_id TEXT,
+    position TEXT,
+    pos_rank INTEGER,
+    overall_rank INTEGER,
+    full_name TEXT,
+    team TEXT,
+    age INTEGER,
+    notes TEXT,
+    tier INTEGER,
+    tier_name TEXT,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS winnow_rankings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    player_id TEXT,
+    position TEXT,
+    pos_rank INTEGER,
+    overall_rank INTEGER,
+    full_name TEXT,
+    team TEXT,
+    age INTEGER,
+    notes TEXT,
+    tier INTEGER,
+    tier_name TEXT,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
@@ -199,6 +229,8 @@ def get_db(db_path=None):
 def get_conn():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA foreign_keys=ON")
     try:
         yield conn
         conn.commit()
